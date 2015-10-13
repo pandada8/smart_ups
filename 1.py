@@ -1,0 +1,25 @@
+import socket
+import ipaddress
+import time
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+# s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, True)
+s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+s.sendto(b'headcall.device.lookup {type:UPS;}', ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
+s.sendto(b'headcall.device.lookup {uid:201412012578@ayi9.com;}',  ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
+s.sendto(b"{hello;ctag:bc0ab8b2;cseq:561a9cd4;cmagic:magicbc0ab8b2;to:201412012578@ayi9.com;}", ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
+s.sendto(b'{stag:9bee386e;ctag:bc0ab8b2;cseq:561a9cd5;data:{get_version;};}', ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
+s.sendto(b'{stag:9bee386e;ctag:bc0ab8b2;cseq:561a9cd7;data:{set_msgs:{server:msg.ayi9.com;title:ups;pass:sajdhfbwbfkdhysgevflsdhshvdlkx;device:ups_fc_64_ba_57_a3_b0;};};}', ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
+s.sendto(b'{stag:9bee386e;ctag:bc0ab8b2;cseq:561a9cd8;data:{get_config:{name;network;};};}', ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
+s.sendto(b'{stag:9bee386e;ctag:bc0ab8b2;cseq:561a9cdc;data:{ups_command:S03R9999;noack;};}', ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
+s.sendto(b'{stag:9bee386e;ctag:bc0ab8b2;cseq:561a9cde;data:{ups_command:C;noack;};}', ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
+s.sendto(b'{stag:a2ca7a07;ctag:d7763194;cseq:561a7405;data:{ups_command:QS;};}',  ("192.168.2.199", 9600))
+print(s.recvfrom(1024))
