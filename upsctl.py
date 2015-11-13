@@ -2,17 +2,19 @@
 """A Simple ups monitor for the http://www.ayi9.com/zh/'s ups controller
 
 Usage:
-upsctl.py scan
-upsctl.py list
-upsctl.py login
-upsctl.py stop [machine]... [--all]
-upsctl.py status [machine]... [--all]
-upsctl.py start [machine]... [--all]
-upsctl.py internel
+upsctl.py scan [-v]
+upsctl.py list [-v]
+upsctl.py login [-v]
+upsctl.py stop [machine] ... [--all] [-v]
+upsctl.py status [machine] ... [--all] [-v]
+upsctl.py start [machine] ... [--all] [-v]
+upsctl.py internel [-v]
+
 
 Options:
     -v            be Verbose
-    -h --help     show this help
+    -h, --help    show this help
+
 """
 
 import socket
@@ -20,7 +22,6 @@ import docopt
 import threading
 import logging
 import os
-from collections import defaultdict
 import json
 import time
 from parse import parse, dump
