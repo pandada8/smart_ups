@@ -14,7 +14,7 @@ def obj_like(i, t, ret):
     return dict(zip(key, value))
 
 obj = Forward()
-elem_member = Word(alphanums + "@.\\ _").leaveWhitespace()
+elem_member = Word(alphanums + "@.\\ _(-").leaveWhitespace()
 elem = elem_member + Optional(Suppress(":") + (elem_member | obj)) + Suppress(";")
 elem.parseAction = [elemAction]
 obj << Suppress("{") + ZeroOrMore(elem) + Suppress("}")
