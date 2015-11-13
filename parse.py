@@ -26,8 +26,17 @@ def parse(text):
     return obj.parseString(text).asList()[0]
 
 def dump(o):
+    return _dump(o).encode("ascii")
+
+
+def _dump(o):
+    def conv(i, j):
+        if isinstance(j, bool):
+            return str(i) + ";"
+        else:
+            return str(i) + ":" + _dump(j) + ";"
     # o should be a dict
     if isinstance(o, dict):
-        return "{" + ''.join([str(k) + ":" + dump(v) + ";" for k, v in o.items()]) + "}"
+        return "{" + ''.join([conv(k, v) for k, v in o.items()]) + "}"
     else:
         return str(o)
