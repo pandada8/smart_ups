@@ -199,7 +199,7 @@ def _status():
         sock.send(dump(payload))
         ret = parse(sock.recv(1024))
         # print(ret)
-        v_in, v_out, _, _, _, v_bat, _, _ = ret["data"]["ups_answer"][1:].split("\\ ")
+        v_in, _, v_out, _, _, v_bat, _, _ = ret["data"]["ups_answer"][1:].split("\\ ")
         print("In: {}V  Out: {}V  Bat: {}V".format(v_in, v_out, v_bat))
         sock.close()
 
