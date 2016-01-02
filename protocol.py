@@ -2,7 +2,8 @@
 import re
 from pyparsing import *
 
-__all__ = ["parse", "dump"]
+__all__ = ["load", "dump"]
+
 def elemAction(i, t, ret):
     if len(ret) == 1:
         ret.append(True)
@@ -20,7 +21,7 @@ elem.parseAction = [elemAction]
 obj << Suppress("{") + ZeroOrMore(elem) + Suppress("}")
 obj.parseAction = [obj_like]
 
-def parse(text):
+def load(text):
     if isinstance(text, bytes) or isinstance(text, bytearray):
         text = text.decode("ascii")
     return obj.parseString(text).asList()[0]

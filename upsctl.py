@@ -16,16 +16,17 @@ Options:
     -h, --help    show this help
 
 """
-
-import socket
 import docopt
+import protocol
+import socket
 import threading
 import logging
 import os
 import json
 import time
-from parse import parse, dump
+import warnings
 import random
+import functools
 import string
 from uuid import getnode as get_mac
 
@@ -35,16 +36,188 @@ configPath = os.path.expanduser(configPath)
 config = {
     "machines": {}
 }
-log = logging.getLogger()
 
+logging.basicConfig(level=logging.DEBUG)
 
 def random_string(length=8):
     return "".join([random.choice(string.hexdigits[:16]) for i in range(length)])
 
+ctag = hex(get_mac())[2:]
+
+class Machine:
+
+    def __init__(self, ip=None, data=None):
+        if ip:
+            self.ip = ip
+        elif data:
+            self._load(data)
+        else:
+            self.ip = None
+            warnings.warn("you should provide ip or data for a machine", UserWarning)
+        self.logger = logging.getLogger("Machine<{}>".format(self.ip))
+        self.sock = None
+        self.cseq = None
+        self.stag = None
+
+    def __str__(self):
+        return "<Machine: {ip}, stag: {stag}, uid: {uid}>".format_map(self)
+
+    def _load(self, data):
+        for i in ['ip', 'cseq', 'uid', 'stag']:
+            self.__setattr__(i, data[i])
+
+    def get_ctag(self):
+        return ctag
+
+    def prepare_sock(self):
+        if not self.sock:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            self.sock.connect((self.ip, 9600))
+
+    def get_cseq(self):
+        if self.cseq:
+            self.cseq = "{:08x}".format((int(self.cseq, 16) + 1) % 0x100000000)
+        else:
+            self.cseq = random_string()
+        return self.cseq
+
+    def send_payload(self, data, noack=False):
+        self.prepare_sock()
+        encoded_payload = protocol.dump(data)
+        tried = 0
+        while tried < 3:
+            try:
+                tried += 1
+                self.sock.send(encoded_payload)
+                self.logger.debug("Sendto {}: {}".format(self.ip, encoded_payload))
+                if noack:
+                    return
+                recv = self.sock.recv(1024)
+                self.logger.debug("Recv   {}: {}".format(self.ip, recv))
+                answer = protocol.load(recv)
+                # TODO: check status
+                return answer
+            except Exception as e:
+                print(e)
+                # self.connect()  # FIXME
+                continue
+        raise Exception("Fail to connect to server")
+
+    def status(self):
+        payload = {
+            "stag": self.stag,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+            "data": {
+                "ups_command": "QS"
+            },
+        }
+        ret = self.send_payload(payload)["data"]["ups_answer"][1:].split("\\ ")
+        print(ret)
+        status = {
+            "input": float(ret[0]),
+            "output": float(ret[2]),
+            "freq": float(ret[4]),
+            "load": int(ret[3], 10) / 100,
+            "bat": float(ret[5]),
+            "unkown": int(ret[7], 2)
+        }
+        print(status)
+        return status
+
+    def mute(self):
+        payload = {
+            "stag": self.stag,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+            "data": {
+                "ups_command": "Q",
+                "noack": True
+            },
+        }
+        self.send_payload(payload, noac=True)
+        self.status()
+
+    def unmute(self):
+        payload = {
+            "stag": self.stag,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+            "data": {
+                "ups_command": "BZON"
+            },
+        }
+        self.send_payload(payload)
+        self.status()
+
+    def shutdown(self):
+        payload = {
+            "stag": self.stag,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+            "data": {
+                "ups_command": "S03R9999",
+                "noack": True
+            },
+        }
+        self.send_payload(payload, noack=True)
+
+    def poweron(self):
+        payload = {
+            "stag": self.stag,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+            "data": {
+                "ups_command": "SON",
+                "noack": True
+            },
+        }
+
+    def auth(self):
+        # this function should run in case we have known the ip and don't know other info
+        self.prepare_sock()
+        self.sock.send(b"headcall.device.lookup {type:UPS;}")
+        ret = self.sock.recv(1024)
+        answer = protocol.load(ret.split(b" ")[1])
+        self.uid = answer["uid"]
+        self.logger.info("Got Echo from {}:{}".format(self.ip, self.uid))
+        payload = {
+            "hello": True,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+            "cmagic": "magic"+self.get_ctag(),
+            "to": self.uid
+        }
+        ret = self.send_payload(payload)
+        if '200' in ret["ack"]:
+            self.stag = ret["stag"]
+
+    def test(self):
+        payload = {
+            "stag": self.stag,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+            "data": {
+                "ups_command": "T",
+                "noack": True,
+            },
+        }
+        self.send_payload(payload)
+
+    def cancel_shutdown(self):
+        payload = {
+            "stag": self.stag,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+            "data": {
+                "ups_command": "CS",
+            },
+        }
+        self.send_payload(payload, noack=True)
+
 
 def add_number(s):
     return "{:08x}".format((int(s, 16) + 1) % 0x100000000)
-
 
 def seq(machine):
     if machine.get("cseq"):
@@ -99,129 +272,6 @@ def save_config():
         log.debug("Save Config to %s", configPath)
 
 
-def get_machines():
-    global config, opt
-    if '--all' in config:
-        return config["machines"].values()
-    else:
-        ret = []
-        machines = {m['uid']: m for m in config['machines']}
-        for i in opt["<machine>"]:
-            if i in machines:
-                ret.append(machines)
-            else:
-                print("Can't find {}".format(i))
-        return ret
-
-def _stop():
-    raise NotImplementedError
-
-
-def _scan():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.sendto(b'headcall.device.lookup {type:UPS;}', ("255.255.255.255", 9600))
-    t = time.time()
-    sock.settimeout(1)
-    result = {}
-    def finding(sock):
-        sock.settimeout(2)
-        start = time.time()
-        while time.time() - start < 10:
-            try:
-                payload, ip = sock.recvfrom(1024)
-                ip, _ = ip
-                _, payload = payload.split(b" ", 1)
-                uid = parse(payload)["uid"]
-                result[uid] = {
-                    "ip": ip,
-                    "uid": uid
-                }
-            except socket.timeout:
-                break
-
-    # Start a new Thread to run the listener
-    t = threading.Thread(target=finding, args=(sock, ))
-    t.start()
-    while t.is_alive():
-        font = r"-\|/"[int(time.time()*20)%4]
-        print("\rScanning {}".format(font), end="")
-        time.sleep(0.05)
-    config["machines"] = result
-    print("\rFinish scanning")
-    print("Found {} ups".format(len(result)))
-
-    print("Connecting...")
-    for _, j in config["machines"].items():
-        payload = {
-            "hello": True,
-            "ctag": config["ctag"],
-            "cseq": hex(int(time.time()))[2:],
-            "cmagic": "magic"+config["ctag"],
-            "to": j['uid']
-        }
-        sock.sendto(dump(payload), (j['ip'], 9600))
-    for i in range(len(config['machines'])):
-        payload, ip = sock.recvfrom(1024)
-        payload = parse(payload)
-        if payload['ack'].startswith("200"):
-            uid = payload['to']
-            config['machines'][uid]['stag'] = payload['stag']
-            config['machines'][uid]["cseq"] = payload["cseq"]
-            print("Connect to {} successfully".format(ip[0]))
-    sock.close()
-
-def _start():
-    raise NotImplementedError
-
-
-def _status():
-    if "--all" not in config and "<machine>" not in config:
-        config["--all"] = True
-    machines = get_machines()
-    for i in machines:
-        if not i.get("stag"):
-            print("{uid} doesn't have a stag".format(**i))
-            continue
-        print("{uid} ({ip} {stag})".format(**i))
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        sock.connect((i['ip'], 9600))
-        payload = {
-            "stag": i["stag"],
-            "ctag": config['ctag'],
-            "cseq": seq(i),
-            "data": {
-                "ups_command": "QS"
-            },
-        }
-        # print(payload)
-        sock.send(dump(payload))
-        ret = parse(sock.recv(1024))
-        # print(ret)
-        v_in, _, v_out, _, _, v_bat, _, _ = ret["data"]["ups_answer"][1:].split("\\ ")
-        print("In: {}V  Out: {}V  Bat: {}V".format(v_in, v_out, v_bat))
-        sock.close()
-
-def _list():
-    nums = len(config["machines"])
-    if nums == 0:
-        print("No Machine")
-        return
-    print("Found {} machines\n".format(nums))
-    print("IP\t\t\tstag\t\tMachine UID")
-    for i, j in config["machines"].items():
-        data = j.copy()
-        if not data.get('stag'):
-            data['stag'] = None
-        print("{ip}\t\t{stag}\t{uid}".format(**data))
-
-def _internel():
-    import pprint
-    print("The Config")
-    print("Location", configPath)
-    pprint.pprint(config)
-
 def main():
     global opt
     opt = docopt.docopt(__doc__)
@@ -239,5 +289,8 @@ def main():
     return
 
 
+
 if __name__ == '__main__':
-    main()
+    m = Machine(ip="192.168.2.198")
+    m.auth()
+    m.status()
