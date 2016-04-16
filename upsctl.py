@@ -9,6 +9,7 @@ upsctl.py stop [machine] ... [--all] [-v]
 upsctl.py status [machine] ... [--all] [-v]
 upsctl.py start [machine] ... [--all] [-v]
 upsctl.py internel [-v]
+upsctl.py mute [-v]
 
 
 Options:
@@ -20,6 +21,7 @@ import docopt
 import protocol
 import socket
 import threading
+import pprint
 import logging
 import os
 import json
@@ -113,16 +115,20 @@ class Machine:
             },
         }
         ret = self.send_payload(payload)["data"]["ups_answer"][1:].split("\\ ")
-        print(ret)
         status = {
             "input": float(ret[0]),
             "output": float(ret[2]),
             "freq": float(ret[4]),
             "load": int(ret[3], 10) / 100,
             "bat": float(ret[5]),
-            "unkown": int(ret[7], 2)
+            "flags": ret[7],
+            "bat_mode": ret[7][0] == '1',
+            "bypass_mode": ret[7][2] == '1',
+            "fault": ret[7][3] == '1',
+            "test_mode": ret[7][5] == '1',
+            "beep": ret[7][7] == '1'
         }
-        print(status)
+        pprint.pprint(status)
         return status
 
     def mute(self):
@@ -156,7 +162,7 @@ class Machine:
             "ctag": self.get_ctag(),
             "cseq": self.get_cseq(),
             "data": {
-                "ups_command": "S03R9999",
+                "ups_command": "S02R9999",
                 "noack": True
             },
         }
@@ -171,6 +177,14 @@ class Machine:
                 "ups_command": "SON",
                 "noack": True
             },
+        }
+
+    def test(self):
+        payload = {
+            "stag": self.stag,
+            "ctag": self.get_ctag(),
+            "cseq": self.get_cseq(),
+
         }
 
     def auth(self):
@@ -210,7 +224,8 @@ class Machine:
             "ctag": self.get_ctag(),
             "cseq": self.get_cseq(),
             "data": {
-                "ups_command": "CS",
+                "ups_command": "C",
+                "noack": True,
             },
         }
         self.send_payload(payload, noack=True)
@@ -279,7 +294,7 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
-    for action in ["scan", "list", "stop", "status", "start", "internel", "login"]:
+    for action in ["scan", "list", "stop", "status", "start", "internel", "login", "mute"]:
         if opt[action]:
             load_config()
             globals()["_" + action]()
